@@ -36,7 +36,7 @@ boardurl=$(jq -r "first(.[] | select(.files[] == \"${board}\") | .domain)" -- "$
 ((last = start + --total))
 
 mapfile -t threadlist < <(
-	parallel --bar -j32 'wget -q -O/dev/stdout https://{1}/{2}/search/text/{3}/type/op/page/{4}/' ::: "${boardurl}" ::: "${board}" ::: "${search}" :::: <(seq "${start}" "${last}") |\
+	parallel --bar -j32 'wget -q -O/dev/stdout -- https://{1}/{2}/search/text/{3}/type/op/page/{4}/' ::: "${boardurl}" ::: "${board}" ::: "${search}" :::: <(seq "${start}" "${last}") |\
 	grep -Eo "https?://${boardurl}/${board}/thread/[0-9]+/" |\
 	sort -u
 )
@@ -45,7 +45,7 @@ mapfile -t threadlist < <(
 printf 'Found %d threads.\n' "${#threadlist[@]}"
 
 mapfile -t imagelist < <(
-	parallel --bar -j32 'wget -q -O/dev/stdout {1}' ::: "${threadlist[@]}" |\
+	parallel --bar -j32 'wget -q -O/dev/stdout -- {1}' ::: "${threadlist[@]}" |\
 	grep -Eo "[a-z0-9]+[a-z0-9\\/\\.-]+/image/[a-z0-9\\/]+\\.[a-z]{3,4}" |\
 	sort -u
 )
