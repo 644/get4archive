@@ -46,7 +46,7 @@ printf 'Found %d threads.\n' "${#threadlist[@]}"
 
 mapfile -t imagelist < <(
 	parallel --bar -j32 'wget -q -O/dev/stdout {1}' ::: "${threadlist[@]}" |\
-	grep -Eo "[a-z0-9]+[a-zA-Z0-9\\/\\.-]+/image/[a-z0-9\\/]+\\.[a-z]{3,4}" |\
+	grep -Eo "[a-z0-9]+[a-z0-9\\/\\.-]+/image/[a-z0-9\\/]+\\.[a-z]{3,4}" |\
 	sort -u
 )
 
