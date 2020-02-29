@@ -1,4 +1,4 @@
-#!/bin/env bash
+#!/usr/bin/env bash
 set -Eeuo pipefail
 
 declare -r archives='https://nstepien.github.io/archives.json/archives.json'
