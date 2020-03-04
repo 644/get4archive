@@ -6,21 +6,54 @@ declare -r jsonfile='/tmp/archives.json'
 declare -i start=1
 declare -i total=1
 declare -i last=1
+declare -i min=0
+declare -i max=8388608
 declare -a threadlist
 declare -a imagelist
 declare folder="${HOME}/Downloads/4chan"
-declare search='fglt'
-declare board='g'
+declare board=''
+declare search=''
+declare sub=''
+declare sdate=''
+declare edate=''
+declare -A itypelist=([w]=webm [g]=gif [p]=png [j]=jpg)
+declare itype='wgpj'
+declare grepfmt
 declare boardurl
+declare searchurl
+
+function helpuser(){
+	cat <<- EOF
+		Usage: ./${0##*/} [options]
+		    -ss       Page number to start from
+		    -to       Amount of pages to search
+		    -itype    Image file type. e.g. wgpj selects webm,gif,png,jpg
+		    -sdate    Start date to search from
+		    -edate    End date to search to
+		    -min      Minimum filesize. e.g. 20.5K
+		    -max      Max filesize. e.g. 3.1M
+		    -sub      Subject to search for
+		    -s        Text to search for
+		    -f        Path to save folder
+		    -b        Board to search
+	EOF
+	exit
+}
 
 while(($# > 0)); do
 	case ${1} in
-		-a) shift; start=${1?-a needs an integer} ;;
-		-t) shift; total=${1?-t needs an integer} ;;
-		-f) shift; folder=${1?-f needs a directory} ;;
+		-ss) shift; start=${1?-ss needs an integer} ;;
+		-to) shift; total=${1?-to needs an integer} ;;
+		-itype) shift; itype=${1?-itype needs an argument} ;;
+		-sdate) shift; sdate=$(date +'%Y-%m-%d' -d "${1?-sdate needs an argument}") ;;
+		-edate) shift; edate=$(date +'%Y-%m-%d' -d "${1?-edate needs an argument}") ;;
+		-min) shift; min=$(numfmt --from=iec "${1?-min needs an integer}") ;;
+		-max) shift; max=$(numfmt --from=iec "${1?-max needs an integer}") ;;
+		-sub) shift; sub=${1?-sub needs an argument} ;;
 		-s) shift; search=${1?-s needs an argument} ;;
+		-f) shift; folder=${1?-f needs a directory} ;;
 		-b) shift; board=${1?-b needs an argument} ;;
-		*) exit ;;
+		*) helpuser; ;;
 	esac
 	shift
 done
@@ -29,28 +62,45 @@ wget -q -N -O"${jsonfile}" -- "${archives}"
 mkdir -p -- "${folder}/${board}"
 
 boardurl=$(jq -r "first(.[] | select(.files[] == \"${board}\") | .domain)" -- "${jsonfile}")
-
-[[ -z ${boardurl} ]] && { printf 'no archive for %q.\n' "${board}" >&2; exit 1; }
+[[ -z ${boardurl} ]] && { printf 'No archive for %q.\n' "${board}" >&2; exit 1; }
 [[ -w ${folder} ]] || { printf '%q not writable.\n' "${folder}" >&2; exit 1; }
+
+[[ -n ${sub} ]] && sub="subject/${sub}/"
+[[ -n ${search} ]] && search="text/${search}/"
+[[ -n ${sdate} ]] && sdate="start/${sdate}/"
+[[ -n ${edate} ]] && edate="end/${edate}/"
+searchurl="https://${boardurl}/${board}/search/${sub}${search}${sdate}${edate}type/op"
 
 ((last = start + --total))
 
 mapfile -t threadlist < <(
-	parallel --bar -j32 'wget -q -O/dev/stdout -- https://{1}/{2}/search/text/{3}/type/op/page/{4}/' ::: "${boardurl}" ::: "${board}" ::: "${search}" :::: <(seq "${start}" "${last}") |\
+	parallel --bar -j32 'wget -q -O/dev/stdout -- {1}/page/{2}/' ::: "${searchurl}" :::: <(seq "${start}" "${last}") |\
 	grep -Eo "https?://${boardurl}/${board}/thread/[0-9]+/" |\
 	sort -u
 )
 
-((${#threadlist[@]})) || { printf 'no threads for %q.\n' "${search}" >&2; exit 1; }
+((${#threadlist[@]})) || { printf 'No threads found.\n' >&2; exit 1; }
 printf 'Found %d threads.\n' "${#threadlist[@]}"
+
+for((i=0; i < ${#itype}; i++)); do
+	grepfmt+=$(printf '|%s' "${itypelist[${itype:${i}:1}]}")
+done
 
 mapfile -t imagelist < <(
 	parallel --bar -j32 'wget -q -O/dev/stdout -- {1}' ::: "${threadlist[@]}" |\
-	grep -Eo "[a-z0-9]+[a-z0-9\\/\\.-]+/image/[a-z0-9\\/]+\\.[a-z]{3,4}" |\
+	grep -Eo "[a-z0-9]+[a-z0-9\\/\\.-]+/image/[a-z0-9\\/]+\\.(${grepfmt:1})" |\
 	sort -u
 )
 
-((${#imagelist[@]})) || { printf 'no images for %q.\n' "${search}" >&2; exit 1; }
+((${#imagelist[@]})) || { printf 'No images found.\n' >&2; exit 1; }
 printf 'Found %d images.\n' "${#imagelist[@]}"
+
+((min > 0 || max < 8388608)) && {
+	mapfile -t imagelist < <(
+		parallel --bar -j32 "wget -q -S --spider -- {1} |& awk '/Content-Length/{if(\$2 > ${min} && \$2 < ${max}) rc=1}; END{exit rc}' || printf '%s\n' {1}" ::: "${imagelist[@]}"
+	)
+	((${#imagelist[@]})) || { printf 'No images within size range %d - %d.\n' "${min}" "${max}" >&2; exit 1; }
+	printf 'Found %d images for size range %d - %d.\n' "${#imagelist[@]}" "${min}" "${max}"
+}
 
 parallel --bar -j32 'wget -q -nc -P{1} -- {2}' ::: "${folder}/${board}/" ::: "${imagelist[@]}"
