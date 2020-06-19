@@ -22,5 +22,8 @@ Usage: ./get4archive [options]
 # Dependencies
 parallel, jq, bash >4.0+
 
+# Preview
+![Gif example](https://github.com/644/get4archive/raw/master/get4archive.gif)
+
 # License
 MIT
